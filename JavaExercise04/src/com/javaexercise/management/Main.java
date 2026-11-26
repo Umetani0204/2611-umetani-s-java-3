@@ -5,52 +5,62 @@ import java.util.Optional;
 import java.util.Scanner;
 
 /**
- * コンソールの入出力(表示と入力受付)だけを担当するクラス
+ * コンソールの入出力とメニュー制御を担当するクラス
  */
 public class Main {
-    private static final String CSV_PATH = "users.csv";
+    // メニューの選択肢
+    private static final String MENU_ADD = "1";
+    private static final String MENU_LIST = "2";
+    private static final String MENU_SEARCH = "3";
+    private static final String MENU_DELETE = "4";
+    private static final String MENU_EXIT = "5";
+    private static final String EXIT_COMMAND = "終了";
 
     public static void main(String[] args) {
-        UserRepositoryInterface repository = new CsvUserRepository(CSV_PATH);
-        UserService service = new UserService(repository);
+        UserRepositoryInterface repository = new CsvUserRepository();
+        UserService service = new UserService(repository); // 起動時にCSV読込
 
         try (Scanner scanner = new Scanner(System.in)) {
-            while (true) {
+            boolean running = true;
+            while (running) {
                 showMenu();
                 String choice = scanner.nextLine().trim();
 
                 switch (choice) {
-                    case "1":
+                    case MENU_ADD:
                         addUser(scanner, service);
                         break;
-                    case "2":
+                    case MENU_LIST:
                         listUsers(service);
                         break;
-                    case "3":
+                    case MENU_SEARCH:
                         searchUser(scanner, service);
                         break;
-                    case "4":
+                    case MENU_DELETE:
                         deleteUser(scanner, service);
                         break;
-                    case "5":
-                    case "終了":
-                        System.out.println("終了します。");
-                        return;
+                    case MENU_EXIT:
+                    case EXIT_COMMAND:
+                        running = false;
+                        break;
                     default:
-                        System.out.println("1〜5の番号か「終了」を入力してください。");
+                        System.out.println("メニューの番号か「" + EXIT_COMMAND + "」を入力してください。");
                 }
                 System.out.println();
             }
         }
+
+        service.saveData(); // 終了時にCSV保存
+        System.out.println("終了します。");
     }
 
     private static void showMenu() {
         System.out.println("==== ユーザー管理システム ====");
-        System.out.println("1. ユーザーを追加");
-        System.out.println("2. ユーザー一覧を表示");
-        System.out.println("3. ユーザーをIDで検索");
-        System.out.println("4. ユーザーをIDで削除");
-        System.out.println("5. 終了");
+        System.out.println(MENU_ADD + ". ユーザーを追加");
+        System.out.println(MENU_LIST + ". ユーザー一覧を表示");
+        System.out.println(MENU_SEARCH + ". ユーザーをIDで検索");
+        System.out.println(MENU_DELETE + ". ユーザーをIDで削除");
+        System.out.println(MENU_EXIT + ". 終了");
         System.out.print("選択してください: ");
     }
 
@@ -66,14 +76,19 @@ public class Main {
         System.out.print("メールアドレスを入力してください: ");
         String email = scanner.nextLine();
 
+        User user;
         try {
-            if (service.addUser(id, name, email)) {
-                System.out.println("ユーザーを追加しました。");
-            } else {
-                System.out.println("そのIDは既に登録されています。");
-            }
+            user = new User(id, name, email);
         } catch (IllegalArgumentException e) {
-            System.out.println(e.getMessage());
+            System.out.println("名前とメールアドレスを入力してください。");
+            return;
+        }
+
+        try {
+            service.addUser(user);
+            System.out.println("ユーザーを追加しました。");
+        } catch (IllegalArgumentException e) {
+            System.out.println("このIDは使用できません。別のIDを入力してください。");
         }
     }
 
@@ -97,7 +112,7 @@ public class Main {
         if (id == null) {
             return;
         }
-        Optional<User> user = service.findUser(id);
+        Optional<User> user = service.findUserById(id);
         if (user.isPresent()) {
             System.out.println(user.get());
         } else {
@@ -112,7 +127,7 @@ public class Main {
         if (id == null) {
             return;
         }
-        if (service.deleteUser(id)) {
+        if (service.deleteUserById(id)) {
             System.out.println("ユーザーを削除しました。");
         } else {
             System.out.println("該当するユーザーが見つかりません。");

@@ -1,19 +1,27 @@
 package com.javaexercise.management;
 
-import java.util.Objects;
-
 /**
- * ユーザー情報を保持するクラス(データのみを持ち、表示形式だけ toString で定義)
+ * ユーザーを表すモデルクラス。
+ * 「名前・メールアドレスは空にできない」というモデル自身のルールをここで保証する。
  */
 public class User {
     private final int id;
     private final String name;
     private final String email;
 
+    /**
+     * @throws IllegalArgumentException 名前またはメールアドレスが null か空の場合
+     */
     public User(int id, String name, String email) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("名前は必須です。");
+        }
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("メールアドレスは必須です。");
+        }
         this.id = id;
-        this.name = name;
-        this.email = email;
+        this.name = name.trim();
+        this.email = email.trim();
     }
 
     public int getId() {
@@ -26,24 +34,6 @@ public class User {
 
     public String getEmail() {
         return email;
-    }
-
-    // IDが同じなら同一ユーザーとみなす
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if (!(obj instanceof User)) {
-            return false;
-        }
-        User other = (User) obj;
-        return id == other.id;
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(id);
     }
 
     @Override

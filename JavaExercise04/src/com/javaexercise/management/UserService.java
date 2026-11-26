@@ -1,53 +1,50 @@
 package com.javaexercise.management;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * ユーザー管理の業務ロジック(入力チェック・重複チェック)を担当。
- * 保存方法は UserRepositoryInterface に任せるので、CSV以外にも差し替え可能。
+ * ユーザー管理のビジネスルール(IDの重複禁止など)を担当するクラス
  */
 public class UserService {
+    private final List<User> users;
     private final UserRepositoryInterface repository;
 
+    // 起動時にリポジトリからデータを読み込む
     public UserService(UserRepositoryInterface repository) {
         this.repository = repository;
+        this.users = new ArrayList<>(repository.loadAll());
     }
 
     /**
      * ユーザーを追加する。
-     * @return 追加できたら true、IDが重複していたら false
-     * @throws IllegalArgumentException 名前・メールが空、またはカンマを含む場合
+     * @throws IllegalArgumentException 同じIDのユーザーが既に存在する場合
      */
-    public boolean addUser(int id, String name, String email) {
-        validate("名前", name);
-        validate("メールアドレス", email);
-        if (repository.findById(id).isPresent()) {
-            return false;
+    public void addUser(User user) {
+        if (findUserById(user.getId()).isPresent()) {
+            throw new IllegalArgumentException("IDが重複しています: " + user.getId());
         }
-        repository.add(new User(id, name.trim(), email.trim()));
-        return true;
+        users.add(user);
     }
 
     public List<User> getAllUsers() {
-        return repository.findAll();
+        return new ArrayList<>(users);
     }
 
-    public Optional<User> findUser(int id) {
-        return repository.findById(id);
+    public Optional<User> findUserById(int id) {
+        return users.stream()
+                .filter(user -> user.getId() == id)
+                .findFirst();
     }
 
-    public boolean deleteUser(int id) {
-        return repository.deleteById(id);
+    /** 削除できたら true、該当ユーザーがいなければ false */
+    public boolean deleteUserById(int id) {
+        return users.removeIf(user -> user.getId() == id);
     }
 
-    // CSVが壊れないよう、空文字とカンマを禁止
-    private void validate(String label, String value) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(label + "は空にできません。");
-        }
-        if (value.contains(",")) {
-            throw new IllegalArgumentException(label + "にカンマ(,)は使用できません。");
-        }
+    // 終了時にリポジトリへ保存する
+    public void saveData() {
+        repository.saveAll(users);
     }
 }

@@ -5,92 +5,133 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 /**
- * CSVファイルでユーザーを永続化するリポジトリ。
- * 起動時に読み込み、追加・削除のたびに自動保存する。
+ * CSVファイルでユーザーを保存・読込するクラス。
+ * CSVの書式に関する処理(区切り文字を含む値の扱いなど)はここに閉じ込める。
  */
 public class CsvUserRepository implements UserRepositoryInterface {
-    private static final String HEADER = "id,name,email";
+    private static final String FILE_PATH = "users.csv";
+    private static final String CSV_HEADER = "id,name,email";
 
-    private final File file;
-    // 登録順を保つため LinkedHashMap を使用
-    private final Map<Integer, User> users = new LinkedHashMap<>();
+    // CSVの書式
+    private static final char DELIMITER = ',';
+    private static final char QUOTE = '"';
 
-    public CsvUserRepository(String filePath) {
-        this.file = new File(filePath);
-        load();
-    }
+    // CSVの列の数と位置
+    private static final int COLUMN_COUNT = 3;
+    private static final int INDEX_ID = 0;
+    private static final int INDEX_NAME = 1;
+    private static final int INDEX_EMAIL = 2;
 
-    @Override
-    public void add(User user) {
-        users.put(user.getId(), user);
-        save();
-    }
+    private final String filePath = FILE_PATH;
 
     @Override
-    public List<User> findAll() {
-        return new ArrayList<>(users.values());
-    }
-
-    @Override
-    public Optional<User> findById(int id) {
-        return Optional.ofNullable(users.get(id));
-    }
-
-    @Override
-    public boolean deleteById(int id) {
-        User removed = users.remove(id);
-        if (removed == null) {
-            return false;
+    public void saveAll(List<User> users) {
+        try (FileWriter writer = new FileWriter(filePath, StandardCharsets.UTF_8)) {
+            writer.write(CSV_HEADER + System.lineSeparator());
+            for (User user : users) {
+                writer.write(toCsvLine(user) + System.lineSeparator());
+            }
+        } catch (IOException e) {
+            System.out.println("ファイルの保存に失敗しました: " + e.getMessage());
         }
-        save();
-        return true;
     }
 
-    // ファイルが無ければ何もしない(初回起動)
-    private void load() {
+    @Override
+    public List<User> loadAll() {
+        List<User> users = new ArrayList<>();
+
+        // 初回起動などでファイルが無い場合は空のリストを返す
+        File file = new File(filePath);
         if (!file.exists()) {
-            return;
+            return users;
         }
+
         try (BufferedReader reader = new BufferedReader(new FileReader(file, StandardCharsets.UTF_8))) {
-            String line = reader.readLine(); // ヘッダー行を読み飛ばす
+            reader.readLine(); // ヘッダー行を読み飛ばす
+            String line;
             while ((line = reader.readLine()) != null) {
                 if (line.isBlank()) {
                     continue;
                 }
-                String[] parts = line.split(",", -1);
-                if (parts.length != 3) {
-                    continue; // 形式が不正な行は無視
-                }
-                try {
-                    int id = Integer.parseInt(parts[0].trim());
-                    users.put(id, new User(id, parts[1].trim(), parts[2].trim()));
-                } catch (NumberFormatException e) {
-                    // IDが数値でない行は無視
+                User user = parseLine(line);
+                if (user != null) {
+                    users.add(user);
                 }
             }
         } catch (IOException e) {
-            throw new UncheckedIOException("CSVの読み込みに失敗しました: " + file.getPath(), e);
+            System.out.println("ファイルの読み込みに失敗しました: " + e.getMessage());
+        }
+        return users;
+    }
+
+    // User → CSV1行
+    private String toCsvLine(User user) {
+        return user.getId() + String.valueOf(DELIMITER)
+                + escape(user.getName()) + DELIMITER
+                + escape(user.getEmail());
+    }
+
+    // 区切り文字や引用符を含む値は "..." で囲む(引用符は2つ重ねる)
+    private String escape(String value) {
+        if (value.indexOf(DELIMITER) < 0 && value.indexOf(QUOTE) < 0) {
+            return value;
+        }
+        String escaped = value.replace(String.valueOf(QUOTE), "" + QUOTE + QUOTE);
+        return QUOTE + escaped + QUOTE;
+    }
+
+    // CSV1行 → User。不正な行は null を返す
+    private User parseLine(String line) {
+        List<String> columns = splitLine(line);
+        if (columns.size() != COLUMN_COUNT) {
+            System.out.println("形式が不正な行を無視しました: " + line);
+            return null;
+        }
+        try {
+            int id = Integer.parseInt(columns.get(INDEX_ID).trim());
+            return new User(id, columns.get(INDEX_NAME), columns.get(INDEX_EMAIL));
+        } catch (IllegalArgumentException e) {
+            // IDが数値でない、または名前・メールが空の場合
+            System.out.println("内容が不正な行を無視しました: " + line);
+            return null;
         }
     }
 
-    private void save() {
-        try (FileWriter writer = new FileWriter(file, StandardCharsets.UTF_8)) {
-            writer.write(HEADER + System.lineSeparator());
-            for (User user : users.values()) {
-                writer.write(user.getId() + "," + user.getName() + "," + user.getEmail()
-                        + System.lineSeparator());
+    // 引用符を考慮して1行を列に分割する
+    private List<String> splitLine(String line) {
+        List<String> columns = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (inQuotes) {
+                if (c == QUOTE) {
+                    boolean escapedQuote = i + 1 < line.length() && line.charAt(i + 1) == QUOTE;
+                    if (escapedQuote) {
+                        current.append(QUOTE);
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    current.append(c);
+                }
+            } else if (c == QUOTE) {
+                inQuotes = true;
+            } else if (c == DELIMITER) {
+                columns.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(c);
             }
-        } catch (IOException e) {
-            throw new UncheckedIOException("CSVの保存に失敗しました: " + file.getPath(), e);
         }
+        columns.add(current.toString());
+        return columns;
     }
 }
